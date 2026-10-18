@@ -1,0 +1,101 @@
+<!DOCTYPE html>
+<html lang="de">
+<head>
+<meta charset="utf-8">
+<meta name="viewport" content="width=device-width, initial-scale=1, viewport-fit=cover">
+<title>Schulplaner</title>
+<style>
+:root{--bg:#f6f7fb;--card:#fff;--tx:#1d2433;--mu:#69708a;--ac:#3b5bdb;--bd:#e1e4ee;--no:#e03131;--te:#e8590c}
+@media (prefers-color-scheme:dark){:root{--bg:#14171f;--card:#1e2330;--tx:#e8ebf5;--mu:#9aa2bd;--ac:#7c93ff;--bd:#2d3447}}
+*{box-sizing:border-box}body{margin:0;background:var(--bg);color:var(--tx);font:16px/1.45 system-ui,-apple-system,Segoe UI,sans-serif}
+main{max-width:760px;margin:0 auto;padding:14px}h1{font-size:1.3rem;margin:0}h2{font-size:1.05rem;margin:18px 0 8px}
+.card{background:var(--card);border:1px solid var(--bd);border-radius:12px;padding:12px;margin:8px 0}
+header{display:flex;justify-content:space-between;align-items:center;gap:8px;flex-wrap:wrap}
+button,input,select,textarea{font:inherit;color:var(--tx);background:var(--bg);border:1px solid var(--bd);border-radius:8px;padding:8px 10px}
+button{cursor:pointer}button.p{background:var(--ac);color:#fff;border-color:var(--ac)}
+.tabs{display:flex;gap:6px;margin:12px 0;flex-wrap:wrap}.tabs button.on{background:var(--ac);color:#fff;border-color:var(--ac)}
+.row{display:flex;gap:8px;flex-wrap:wrap;align-items:center}.row>*{flex:1 1 120px}
+.lesson{display:flex;gap:10px}.nr{min-width:28px;font-weight:700;color:var(--mu)}
+.tag{font-size:.75rem;padding:2px 7px;border-radius:99px;color:#fff;display:inline-block;margin-right:6px}
+.ha{background:var(--ac)}.test{background:var(--te)}.ka{background:var(--no)}.mu{color:var(--mu);font-size:.9rem}
+.scroll{overflow-x:auto}table{border-collapse:collapse;width:100%;min-width:560px}td,th{border:1px solid var(--bd);padding:4px}td input{width:100%;min-width:70px;border:0;background:transparent;padding:4px}
+.x{background:none;border:0;color:var(--no);padding:0 4px}.ph{max-width:140px;max-height:120px;border-radius:8px;margin:4px 4px 0 0}
+#ml{max-height:50vh;overflow-y:auto}.msg{padding:6px 0;border-bottom:1px solid var(--bd)}.err{color:var(--no)}
+</style>
+<script src="https://cdn.jsdelivr.net/npm/@supabase/supabase-js@2.58.0/dist/umd/supabase.min.js"></script>
+</head>
+<body>
+<main id="app"></main>
+<script>
+/* >>> HIER DEINE SUPABASE-DATEN EINTRAGEN <<< */
+const SB_URL="https://rzofbhdwtkerkwhxqqgq.supabase.co",SB_KEY="sb_publishable_w04CQB6mujalBzs8fXVmLA_ZYUfyi1K";
+const sb=supabase.createClient(SB_URL,SB_KEY),B="loesungen";
+const DAYS=["Montag","Dienstag","Mittwoch","Donnerstag","Freitag"],LBL={ha:"Hausaufgabe",test:"Test",ka:"Klassenarbeit"};
+const ROLES={admin:"Admin (alles)",ha:"Hausaufgaben eintragen",test:"Hausaufgaben, Tests & Klassenarbeiten",read:"Nur lesen"};
+let me=null,tt=DAYS.map(()=>Array(8).fill("")),items=[],sols=[],users=[],msgs=[],tab="tag",edit=false,date=nextSchoolDay(),err="";
+const $=id=>document.getElementById(id);
+const esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
+const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+function nextSchoolDay(){const d=new Date();d.setDate(d.getDate()+1);while(d.getDay()==0||d.getDay()==6)d.setDate(d.getDate()+1);return iso(d)}
+const wd=s=>(new Date(s+"T12:00:00").getDay()+6)%7,fmt=s=>s.split("-").reverse().join(".");
+const slug=n=>(n.toLowerCase().normalize("NFD").replace(/[^a-z0-9]/g,"")||"x");
+const url=p=>sb.storage.from(B).getPublicUrl(p).data.publicUrl;
+const role=()=>me?me.role:"read",isA=()=>role()=="admin";
+const can=t=>isA()||role()=="test"||(role()=="ha"&&t=="ha");
+async function init(){const{data}=await sb.auth.getSession();if(data.session)await start();else render()}
+async function start(){const{data:{user}}=await sb.auth.getUser();const{data:p}=await sb.from("profiles").select("*").eq("id",user.id).single();me=p;await loadAll();render();setInterval(pollChat,5000)}
+async function loadAll(){const[a,b,c,d,e]=await Promise.all([sb.from("timetable").select("*"),sb.from("items").select("*").order("id"),sb.from("solutions").select("*").order("id"),sb.from("profiles").select("*").order("name"),sb.from("messages").select("*").order("id",{ascending:false}).limit(100)]);
+ tt=DAYS.map(()=>Array(8).fill(""));(a.data||[]).forEach(r=>{if(tt[r.day])tt[r.day][r.lesson]=r.subject});items=b.data||[];sols=c.data||[];users=d.data||[];msgs=(e.data||[]).reverse()}
+async function auth(neu){const n=$("nm").value.trim(),p=$("pw").value;if(!n||p.length<6){err="Bitte Name und ein Passwort mit mindestens 6 Zeichen eingeben.";return render()}
+ const email=slug(n)+"@klasse.local",r=neu?await sb.auth.signUp({email,password:p,options:{data:{name:n}}}):await sb.auth.signInWithPassword({email,password:p});
+ if(r.error){err=r.error.message;return render()}
+ if(!r.data.session){err="Registriert, aber noch keine Sitzung: In Supabase die E-Mail-Bestätigung ausschalten.";return render()}
+ err="";await start()}
+async function logout(){await sb.auth.signOut();location.reload()}
+function shift(n){const d=new Date(date+"T12:00:00");d.setDate(d.getDate()+n);date=iso(d);render()}
+function subs(d){const u=[...new Set((d<5?tt[d]:tt.flat()).filter(Boolean))];return u.length?u:[...new Set(tt.flat().filter(Boolean))]}
+async function addItem(){const type=$("typ").value;if(!can(type))return;const tx=$("txt").value.trim();if(!tx)return;
+ const r=await sb.from("items").insert({date,subject:$("sub").value,type,text:tx,by_name:me.name});if(r.error)return alert(r.error.message);await loadAll();render()}
+async function delItem(id){await sb.from("items").delete().eq("id",id);await loadAll();render()}
+async function delSol(id,p){await sb.storage.from(B).remove([p]);await sb.from("solutions").delete().eq("id",id);await loadAll();render()}
+async function setCell(d,l,v){await sb.from("timetable").upsert({day:d,lesson:l,subject:v.trim()});tt[d][l]=v.trim()}
+async function setRole(id,r){await sb.from("profiles").update({role:r}).eq("id",id);await loadAll();render()}
+function shrink(f){return new Promise(res=>{const im=new Image();im.onload=()=>{const k=Math.min(1,1000/Math.max(im.width,im.height)),c=document.createElement("canvas");c.width=im.width*k;c.height=im.height*k;c.getContext("2d").drawImage(im,0,0,c.width,c.height);c.toBlob(res,"image/jpeg",.8)};im.src=URL.createObjectURL(f)})}
+async function addPhoto(id,f){if(!f)return;const b=await shrink(f),p=id+"/"+Date.now()+".jpg",u=await sb.storage.from(B).upload(p,b,{contentType:"image/jpeg"});if(u.error)return alert(u.error.message);
+ await sb.from("solutions").insert({item_id:id,path:p,by_name:me.name});await loadAll();render()}
+async function send(){const t=$("ct").value.trim();if(!t)return;$("ct").value="";await sb.from("messages").insert({text:t,by_name:me.name});await pollChat(true)}
+async function delMsg(id){await sb.from("messages").delete().eq("id",id);await pollChat(true)}
+async function pollChat(f){if(!me||(tab!="chat"&&!f))return;const{data}=await sb.from("messages").select("*").order("id",{ascending:false}).limit(100);msgs=(data||[]).reverse();if(tab=="chat")chatList()}
+function chatList(){const e=$("ml");if(!e)return;const b=e.scrollTop+e.clientHeight>=e.scrollHeight-40;
+ e.innerHTML=msgs.map(m=>`<div class="msg"><b>${esc(m.by_name)}</b> <span class="mu">${new Date(m.created_at).toLocaleString("de-DE",{day:"2-digit",month:"2-digit",hour:"2-digit",minute:"2-digit"})}</span>${isA()?` <button class="x" onclick="delMsg(${m.id})">✕</button>`:""}<br>${esc(m.text)}</div>`).join("")||'<p class="mu">Noch keine Nachrichten.</p>';if(b)e.scrollTop=e.scrollHeight}
+function itemHtml(i){const s=sols.filter(x=>x.item_id==i.id);
+ return `<div class="mu"><span class="tag ${i.type}">${LBL[i.type]}</span>${esc(i.text)} <i>(${esc(i.by_name)})</i>${isA()||i.user_id==me.id?` <button class="x" onclick="delItem(${i.id})">✕</button>`:""}
+ <div>${s.map(x=>`<span><a href="${url(x.path)}" target="_blank"><img class="ph" src="${url(x.path)}" alt="Lösung von ${esc(x.by_name)}"></a>${isA()?`<button class="x" onclick="delSol(${x.id},'${x.path}')">✕</button>`:""}</span>`).join("")}</div>
+ ${i.type=="ha"?`<label style="cursor:pointer">📷 Lösung hinzufügen<input type="file" accept="image/*" hidden onchange="addPhoto(${i.id},this.files[0])"></label>`:""}</div>`}
+function weekView(){const m=new Date(date+"T12:00:00");m.setDate(m.getDate()-wd(date));
+ const ds=DAYS.map((_,i)=>{const x=new Date(m);x.setDate(x.getDate()+i);return iso(x)});
+ let h=`<div class="row"><button onclick="shift(-7)">◀ Woche</button><b>${fmt(ds[0])} – ${fmt(ds[4])}</b><button onclick="shift(7)">Woche ▶</button></div>`;
+ if(isA())h+=`<p><button onclick="edit=true;render()">Plan bearbeiten</button></p>`;
+ if(!tt.some(d=>d.some(Boolean)))return h+`<p class="mu">Noch kein Stundenplan eingetragen.</p>`;
+ h+=`<div class="scroll"><table style="min-width:640px"><tr><th></th>${DAYS.map((d,i)=>`<th>${d.slice(0,2)}<br><span class="mu">${ds[i].slice(8)}.${ds[i].slice(5,7)}.</span></th>`).join("")}</tr>`;
+ for(let l=0;l<8;l++){if(!tt.some(d=>d[l]))continue;h+=`<tr><th>${l+1}</th>${DAYS.map((_,d)=>{const s=tt[d][l],it=s?items.filter(x=>x.date==ds[d]&&x.subject.toLowerCase()==s.toLowerCase()):[];
+  return `<td style="vertical-align:top"><b>${esc(s)}</b>${it.map(i=>`<div class="mu"><span class="tag ${i.type}">${{ha:"HA",test:"Test",ka:"KA"}[i.type]}</span>${esc(i.text)}${sols.some(x=>x.item_id==i.id)?" 📷":""}</div>`).join("")}</td>`}).join("")}</tr>`}
+ return h+`</table></div>`}
+function render(){const a=$("app");
+ if(!me){a.innerHTML=`<h1>Schulplaner</h1><div class="card"><p>Melde dich mit deinem Namen an. Beim ersten Mal auf „Neu registrieren“ tippen. Wer sich als Erstes registriert, wird Admin.</p><div class="row"><input id="nm" placeholder="Dein Name" autocomplete="username"><input id="pw" type="password" placeholder="Passwort (min. 6 Zeichen)" autocomplete="current-password"></div><p class="err">${esc(err)}</p><div class="row"><button class="p" onclick="auth(false)">Anmelden</button><button onclick="auth(true)">Neu registrieren</button></div></div>`;return}
+ let h=`<header><h1>Schulplaner</h1><span class="mu">${esc(me.name)} · ${ROLES[role()]} <button onclick="logout()">Abmelden</button></span></header><div class="tabs">${[["tag","Tag"],["plan","Stundenplan"],["chat","Chat"]].concat(isA()?[["rollen","Rollen"]]:[]).map(([k,n])=>`<button class="${tab==k?"on":""}" onclick="tab='${k}';render()">${n}</button>`).join("")}</div>`;
+ if(tab=="tag"){const d=wd(date);h+=`<div class="row"><button onclick="shift(-1)">◀</button><input type="date" value="${date}" onchange="date=this.value;render()"><button onclick="shift(1)">▶</button></div><h2>${d<5?DAYS[d]:"Wochenende"}, ${fmt(date)}</h2>`;
+  const used=new Set();(d<5?tt[d]:[]).forEach((s,i)=>{if(!s)return;used.add(s.toLowerCase());const it=items.filter(x=>x.date==date&&x.subject.toLowerCase()==s.toLowerCase());
+   h+=`<div class="card lesson"><span class="nr">${i+1}.</span><div><b>${esc(s)}</b>${it.map(itemHtml).join("")||'<div class="mu">–</div>'}</div></div>`});
+  const rest=items.filter(x=>x.date==date&&!used.has(x.subject.toLowerCase()));if(rest.length)h+=`<div class="card"><b>Weitere Einträge</b>${rest.map(i=>`<div class="mu">${esc(i.subject)}</div>`+itemHtml(i)).join("")}</div>`;
+  if(can("ha"))h+=`<h2>Eintragen</h2><div class="card"><div class="row"><select id="typ"><option value="ha">Hausaufgabe</option>${can("test")?'<option value="test">Test</option><option value="ka">Klassenarbeit</option>':""}</select><select id="sub">${subs(d).map(s=>`<option>${esc(s)}</option>`).join("")}</select></div><textarea id="txt" rows="2" style="width:100%;margin:8px 0" placeholder="z. B. Arbeitsheft S. 315 abschreiben"></textarea><button class="p" onclick="addItem()">Speichern</button></div>`;
+  else h+=`<p class="mu">Du hast nur Leserechte.</p>`}
+ if(tab=="plan"&&!edit)h+=weekView();
+ if(tab=="plan"&&edit&&isA())h+=`<button class="p" onclick="edit=false;render()">Fertig</button><p class="mu">Fächer direkt in die Felder tippen.</p><div class="scroll card"><table><tr><th></th>${DAYS.map(d=>`<th>${d.slice(0,2)}</th>`).join("")}</tr>${Array.from({length:8},(_,l)=>`<tr><th>${l+1}</th>${DAYS.map((_,d)=>`<td><input value="${esc(tt[d][l])}" onchange="setCell(${d},${l},this.value)"></td>`).join("")}</tr>`).join("")}</table></div>`;
+ if(tab=="chat")h+=`<div class="card"><b>Klassen-Chat</b><p class="mu">Hier kannst du Fragen zu Aufgaben stellen und anderen helfen.</p><div id="ml"></div><div class="row" style="margin-top:8px"><input id="ct" placeholder="Nachricht schreiben …" onkeydown="if(event.key=='Enter')send()"><button class="p" onclick="send()" style="flex:0 0 auto">Senden</button></div></div>`;
+ if(tab=="rollen"&&isA())h+=users.map(u=>`<div class="card row"><b>${esc(u.name)}</b><select onchange="setRole('${u.id}',this.value)">${Object.entries(ROLES).map(([k,v])=>`<option value="${k}" ${u.role==k?"selected":""}>${v}</option>`).join("")}</select></div>`).join("");
+ a.innerHTML=h;if(tab=="chat")chatList()}
+init();
+</script>
+</body>
+</html>
