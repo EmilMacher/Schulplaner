@@ -35,7 +35,7 @@ const ROLES={admin:"Admin (alles)",ha:"Hausaufgaben eintragen",test:"Hausaufgabe
 let me=null,tt=DAYS.map(()=>Array(8).fill("")),items=[],sols=[],users=[],msgs=[],tab="tag",edit=false,date=nextSchoolDay(),err="";
 const $=id=>document.getElementById(id);
 const esc=t=>String(t??"").replace(/[&<>"]/g,c=>({"&":"&amp;","<":"&lt;",">":"&gt;",'"':"&quot;"}[c]));
-const iso=d=>d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0");
+function iso(d){return d.getFullYear()+"-"+String(d.getMonth()+1).padStart(2,"0")+"-"+String(d.getDate()).padStart(2,"0")}
 function nextSchoolDay(){const d=new Date();d.setDate(d.getDate()+1);while(d.getDay()==0||d.getDay()==6)d.setDate(d.getDate()+1);return iso(d)}
 const wd=s=>(new Date(s+"T12:00:00").getDay()+6)%7,fmt=s=>s.split("-").reverse().join(".");
 const slug=n=>(n.toLowerCase().normalize("NFD").replace(/[^a-z0-9]/g,"")||"x");
